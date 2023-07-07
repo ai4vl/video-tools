@@ -1,5 +1,5 @@
-from project_name.base import NAME
+from video_tools.base import NAME
 
 
 def test_base():
-    assert NAME == "project_name"
+    assert NAME == "video_tools"
