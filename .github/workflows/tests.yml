@@ -54,6 +54,7 @@ jobs:
         cache: 'poetry'
     - name: Install dependencies
       run: |
+        sudo apt-get install ffmpeg
         poetry run pip install -U pip
         poetry install --all-extras
     - name: Test apps

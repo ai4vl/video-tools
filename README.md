@@ -1,30 +1,32 @@
 
 # ai4vl video tools
 
-Video conversion tools for ai4vl.
+Video handling tools for ai4vl.
 
 ## Install it from PyPI
 
 ```bash
-pip install video_tools
+pip install ai4vl-video-tools
 ```
 
 ## Usage
 
-```py
-from video_tools import BaseClass
-from video_tools import base_function
-
-BaseClass().base_method()
-base_function()
-```
+The tools expects a directory with video files as input and outputs a directory with the converted videos.
+The source directory must have the following structure:
 
 ```bash
-$ python -m video_tools
-#or
-$ video_tools
+source_dir
+└── some_study_name
+    ├── 1-1  # these are patient number - case number
+    │   ├── snipped01.mp4
+    │   ├── snipped02.mp4
+    │   └── snipped03.mp4
+    └── 2-2
+        └── snipped04.mp4
 ```
 
-## Development
+Run the help command to see the usage. A basic example is:
 
-Read the [CONTRIBUTING.md](CONTRIBUTING.md) file.
+```bash
+$ python -m video_tools -v aggregate -i tests/data/ -o tests/data/output -s 1
+```
