@@ -1,0 +1,62 @@
+name: tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [ "3.11" ]
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install poetry
+      run: pipx install poetry
+    - uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'poetry'
+    - name: Install dependencies
+      run: |
+        poetry run pip install -U pip
+        poetry install
+    - name: check format with black
+      run: |
+        poetry run black --version
+        poetry run black --check .
+    - name: check import order with isort
+      run: |
+        poetry run isort --version
+        poetry run isort -c .
+    - name: Lint with pylint
+      run: |
+        poetry run pylint --version
+        poetry run pylint ephios
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [ "3.8", "3.9", "3.10", "3.11" ]
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install poetry
+      run: pipx install poetry
+    - uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'poetry'
+    - name: Install dependencies
+      run: |
+        poetry run pip install -U pip
+        poetry install --all-extras
+    - name: Test apps
+      env:
+        DATABASE_URL: ${{ matrix.database_url }}
+      run: poetry run pytest tests/
