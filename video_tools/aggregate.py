@@ -1,16 +1,18 @@
 import itertools
 import logging
 import re
+import shutil
 from fractions import Fraction
 from pathlib import Path
+from typing import List
 
 import ffmpeg
 from natsort import natsorted
 from slugify import slugify
 from tqdm import tqdm
 
-DEFAULT_OUTPUT_FILENAME_TEMPLATE = "{study_slug}_{patient_number}-{case_number}{output_extension}"
-DEFAULT_INPUT_PATH_PATTERN = r"(?P<study_name>[-\w ]+)\/(?P<patient_number>\d+)-(?P<case_number>\d+)\/(?P<stem>[-\w ]+)(?P<input_extension>\.\w+)$"
+DEFAULT_OUTPUT_FILENAME_TEMPLATE = "{study_slug}_{case_number}{output_extension}"
+DEFAULT_INPUT_PATH_PATTERN = r"(?P<study_name>[-\w ]+)\/(?P<case_number>[-\d]+)\/(?P<stem>[-\w ]+)(?P<input_extension>\.\w+)$"
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +28,7 @@ class Aggregator:
         output_filename_template: str = DEFAULT_OUTPUT_FILENAME_TEMPLATE,
         seperator_frames=30,
         dry_run=False,
+        overwrite=False,
     ):
         self.input_folder = input_folder
         self.output_folder = output_folder
@@ -35,7 +38,8 @@ class Aggregator:
         self.output_filename_template = output_filename_template
         self.seperator_frames = seperator_frames
         self.dry_run = dry_run
-        self.seperator_path = self.output_folder / "seperator"
+        self.temp_path = self.output_folder / "_temp"
+        self.overwrite = overwrite
 
     def _get_input_path_re(self):
         return re.compile(self.input_path_pattern)
@@ -58,7 +62,6 @@ class Aggregator:
             paths = [match["path"] for match in natsorted(group, key=stem_key)]
             yield {
                 "case_number": case_number,
-                "patient_number": group[0]["patient_number"],
                 "study_name": group[0]["study_name"],
                 "study_slug": slugify(group[0]["study_name"]),
                 "snippet_count": len(paths),
@@ -74,18 +77,39 @@ class Aggregator:
             logger.debug(err)
 
     def _get_seperator_file_path(self, vary_on):
-        return self.seperator_path / f"{'_'.join(str(on) for on in vary_on)}{self.input_extension}"
+        return (
+            self.temp_path
+            / "seperator"
+            / f"{'_'.join(str(on) for on in vary_on)}{self.input_extension}"
+        )
 
     def _clear_seperator_files(self):
-        if self.seperator_path.exists():
+        if self.temp_path.exists():
             logger.info("Clearing seperator files")
             if self.dry_run:
                 return
-            for path in self.seperator_path.glob("*"):
-                path.unlink()
-            self.seperator_path.rmdir()
+            shutil.rmtree(self.temp_path)
+
+    def _get_playlist_file(self, input_paths: List[Path], case_number):
+        playlist_file = self.temp_path / "playlists" / f"{case_number}.txt"
+        if not self.dry_run:
+            playlist_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(playlist_file, "w") as f:
+                for paths in input_paths:
+                    f.write(f"file '{paths.absolute().as_posix()}'\n")
+        return playlist_file
 
     def generate_output_file(self, job):
+        output_file_path = self.output_folder / self.output_filename_template.format(
+            study_slug=job["study_slug"],
+            case_number=job["case_number"],
+            snippet_count=job["snippet_count"],
+            output_extension=self.output_extension,
+        )
+        if not self.overwrite and output_file_path.exists():
+            logger.info("Skipping case %s, output file already exists", job["case_number"])
+            return
+
         seperator_file_path = None
         if len(job["paths"]) > 1 and self.seperator_frames:
             probe_info = ffmpeg.probe(job["paths"][0])
@@ -97,7 +121,7 @@ class Aggregator:
                 vary_on=[
                     "black",
                     f"{v_stream['width']}x{v_stream['height']}",
-                    f"{self.seperator_frames}_at_{fps}_fps",
+                    f"{self.seperator_frames}_at_{float(fps):.2f}_fps",
                 ]
             )
             if not seperator_file_path.exists():
@@ -117,28 +141,18 @@ class Aggregator:
 
         logger.info("Generating case %s", job["case_number"])
 
-        inputs = []
+        input_paths = []
         for idx, path in enumerate(job["paths"]):
-            inputs.append(ffmpeg.input(path.as_posix()))
+            input_paths.append(path)
             if self.seperator_frames and idx < len(job["paths"]) - 1:
-                inputs.append(ffmpeg.input(seperator_file_path.as_posix()))
+                input_paths.append(seperator_file_path)
 
-        stream = (
-            ffmpeg.concat(*inputs)
-            .output(
-                (
-                    self.output_folder
-                    / self.output_filename_template.format(
-                        study_slug=job["study_slug"],
-                        patient_number=job["patient_number"],
-                        case_number=job["case_number"],
-                        snippet_count=job["snippet_count"],
-                        output_extension=self.output_extension,
-                    )
-                ).as_posix(),
-            )
-            .overwrite_output()
+        playlist_file_path = self._get_playlist_file(input_paths, job["case_number"])
+        stream = ffmpeg.input(playlist_file_path.as_posix(), format="concat", safe=0).output(
+            output_file_path.as_posix(), c="copy"
         )
+        if self.overwrite:
+            stream = stream.overwrite_output()
         self._run_stream(stream)
 
     def run(self):
@@ -146,6 +160,7 @@ class Aggregator:
         aggregations = self.get_aggregations(input_matches)
         if not self.dry_run:
             self.output_folder.mkdir(parents=True, exist_ok=True)
-        for job in tqdm(list(aggregations)):
+        aggregations = natsorted(list(aggregations), key=lambda job: job["case_number"])
+        for job in tqdm(aggregations, desc="Generating videos"):
             self.generate_output_file(job)
         self._clear_seperator_files()

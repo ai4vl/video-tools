@@ -26,12 +26,6 @@ def main():
 
     aggregate_parser = subparsers.add_parser("aggregate", help="Aggregate case videos")
     aggregate_parser.add_argument(
-        "--dry-run",
-        "-d",
-        action="store_true",
-        help="Dry run (do not run ffmpeg nor generate output)",
-    )
-    aggregate_parser.add_argument(
         "--input-folder",
         "-i",
         required=True,
@@ -60,6 +54,18 @@ def main():
         type=int,
         help="Number of frames to insert between snippets",
     )
+    aggregate_parser.add_argument(
+        "--dry-run",
+        "-d",
+        action="store_true",
+        help="Dry run (do not run ffmpeg nor generate output)",
+    )
+    aggregate_parser.add_argument(
+        "--overwrite",
+        "-y",
+        action="store_true",
+        help="Overwrite existing output files. By default, existing files are skipped.",
+    )
 
     args = parser.parse_args()
     logging.basicConfig(
@@ -83,5 +89,6 @@ def cli_aggregate(args):
         output_extension=args.output_extension,
         seperator_frames=args.seperator_frames,
         dry_run=args.dry_run,
+        overwrite=args.overwrite,
     )
     aggregator.run()
