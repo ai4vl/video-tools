@@ -18,7 +18,7 @@ black = ">=22.8,<24.0"
 pre-commit = ">=2.20,<4.0"
 pytest = "^7.4.0"
 isort = "^5.12.0"
-pylint = "^2.17.4"
+pylint = ">=2.17.4,<4.0.0"
 
 [tool.poetry.scripts]
 video_tools = 'video_tools.__main__:main'
